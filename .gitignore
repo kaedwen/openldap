@@ -1,0 +1,28 @@
+# .gitignore for OpenLDAP build
+
+# Build artifacts
+*.tar
+*.tar.gz
+
+# Secrets and passwords
+*.key
+*.pem
+*.crt
+secrets/
+.env
+.env.local
+
+# Testing
+test/
+tmp/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
