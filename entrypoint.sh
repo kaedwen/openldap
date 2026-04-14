@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # OpenLDAP entrypoint script
 
 set -e
@@ -62,6 +62,8 @@ include /etc/openldap/schema/cosine.schema
 include /etc/openldap/schema/inetorgperson.schema
 include /etc/openldap/schema/nis.schema
 
+moduleload back_mdb
+
 database mdb
 suffix "$LDAP_BASE_DN"
 rootdn "cn=admin,$LDAP_BASE_DN"
@@ -71,8 +73,12 @@ directory /var/lib/openldap/openldap-data
 index objectClass eq
 EOF
 
-    # Import base structure
+    # Import base structure as root
     slapadd -f /tmp/slapd.conf -l /tmp/init.ldif
+
+    # Fix permissions after import
+    chown -R ldap:ldap /var/lib/openldap/openldap-data
+    chown -R ldap:ldap /etc/openldap/slapd.d
 
     echo "Database initialized!"
     rm -f /tmp/init.ldif /tmp/slapd.conf
@@ -80,6 +86,6 @@ else
     echo "Database exists, skipping initialization."
 fi
 
-# Start slapd
+# Start slapd (will run as ldap user due to -u/-g flags in CMD)
 echo "Starting slapd..."
 exec "$@"
