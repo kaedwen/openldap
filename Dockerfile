@@ -29,4 +29,3 @@ HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
 
 # Keep as root for initialization, entrypoint will handle user switching
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["slapd", "-d", "256", "-h", "ldap:/// ldaps:///", "-u", "ldap", "-g", "ldap"]

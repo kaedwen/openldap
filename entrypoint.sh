@@ -26,11 +26,60 @@ echo "Domain: $LDAP_DOMAIN"
 echo "Base DN: $LDAP_BASE_DN"
 echo "Organization: $LDAP_ORGANISATION"
 
-# Check if database already exists
-if [ ! -f /var/lib/openldap/openldap-data/data.mdb ]; then
-    echo "First run - initializing database..."
+# Check if cn=config database already exists
+if [ ! -d /etc/openldap/slapd.d/cn=config ]; then
+    echo "First run - initializing OpenLDAP configuration..."
 
-    # Create base configuration
+    # Generate password hash
+    ADMIN_PASSWORD_HASH=$(slappasswd -s "$LDAP_ADMIN_PASSWORD")
+
+    # Create cn=config configuration
+    cat > /tmp/config.ldif << EOF
+dn: cn=config
+objectClass: olcGlobal
+cn: config
+olcLogLevel: stats
+
+dn: cn=module,cn=config
+objectClass: olcModuleList
+cn: module
+olcModulePath: /usr/lib/openldap
+olcModuleLoad: back_mdb.so
+
+dn: cn=schema,cn=config
+objectClass: olcSchemaConfig
+cn: schema
+
+include: file:///etc/openldap/schema/core.ldif
+include: file:///etc/openldap/schema/cosine.ldif
+include: file:///etc/openldap/schema/inetorgperson.ldif
+include: file:///etc/openldap/schema/nis.ldif
+
+dn: olcDatabase=mdb,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcMdbConfig
+olcDatabase: mdb
+olcDbDirectory: /var/lib/openldap/openldap-data
+olcSuffix: $LDAP_BASE_DN
+olcRootDN: cn=admin,$LDAP_BASE_DN
+olcRootPW: $ADMIN_PASSWORD_HASH
+olcDbIndex: objectClass eq
+olcDbIndex: cn eq
+olcDbIndex: uid eq
+olcAccess: to attrs=userPassword
+  by self write
+  by anonymous auth
+  by * none
+olcAccess: to *
+  by self write
+  by * read
+EOF
+
+    # Import cn=config
+    mkdir -p /etc/openldap/slapd.d
+    slapadd -n 0 -F /etc/openldap/slapd.d -l /tmp/config.ldif
+
+    # Create base data structure
     cat > /tmp/init.ldif << EOF
 dn: $LDAP_BASE_DN
 objectClass: top
@@ -44,7 +93,7 @@ objectClass: simpleSecurityObject
 objectClass: organizationalRole
 cn: admin
 description: LDAP administrator
-userPassword: $(slappasswd -s "$LDAP_ADMIN_PASSWORD")
+userPassword: $ADMIN_PASSWORD_HASH
 
 dn: ou=users,$LDAP_BASE_DN
 objectClass: organizationalUnit
@@ -55,37 +104,20 @@ objectClass: organizationalUnit
 ou: groups
 EOF
 
-    # Create minimal slapd.conf for initial import
-    cat > /tmp/slapd.conf << EOF
-include /etc/openldap/schema/core.schema
-include /etc/openldap/schema/cosine.schema
-include /etc/openldap/schema/inetorgperson.schema
-include /etc/openldap/schema/nis.schema
+    # Import base structure
+    mkdir -p /var/lib/openldap/openldap-data
+    slapadd -n 1 -F /etc/openldap/slapd.d -l /tmp/init.ldif
 
-moduleload back_mdb
+    # Fix permissions
+    chown -R ldap:ldap /var/lib/openldap/openldap-data 2>/dev/null || true
+    chown -R ldap:ldap /etc/openldap/slapd.d 2>/dev/null || true
 
-database mdb
-suffix "$LDAP_BASE_DN"
-rootdn "cn=admin,$LDAP_BASE_DN"
-rootpw $LDAP_ADMIN_PASSWORD
-directory /var/lib/openldap/openldap-data
-
-index objectClass eq
-EOF
-
-    # Import base structure as root
-    slapadd -f /tmp/slapd.conf -l /tmp/init.ldif
-
-    # Fix permissions after import
-    chown -R ldap:ldap /var/lib/openldap/openldap-data
-    chown -R ldap:ldap /etc/openldap/slapd.d
-
-    echo "Database initialized!"
-    rm -f /tmp/init.ldif /tmp/slapd.conf
+    echo "Configuration initialized!"
+    rm -f /tmp/config.ldif /tmp/init.ldif
 else
-    echo "Database exists, skipping initialization."
+    echo "Configuration exists, skipping initialization."
 fi
 
-# Start slapd (will run as ldap user due to -u/-g flags in CMD)
+# Start slapd with cn=config
 echo "Starting slapd..."
-exec "$@"
+exec slapd -d 256 -h "ldap:/// ldaps:///" -F /etc/openldap/slapd.d -u ldap -g ldap
