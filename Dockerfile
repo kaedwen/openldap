@@ -16,8 +16,9 @@ RUN mkdir -p /var/lib/openldap/openldap-data \
     && chown -R ldap:ldap /var/lib/openldap \
     && chown -R ldap:ldap /etc/openldap/slapd.d
 
-# Copy entrypoint script
+# Copy entrypoint script and minimal init config
 COPY entrypoint.sh /usr/local/bin/
+COPY minimal-init.ldif /usr/local/share/openldap/
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Expose LDAP ports
@@ -25,7 +26,7 @@ EXPOSE 389 636
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD ldapsearch -x -H ldap://localhost -b "" -s base || exit 1
+    CMD ldapsearch -Y EXTERNAL -H ldapi:/// -b "" -s base "(objectClass=*)" namingContexts || exit 1
 
 # Keep as root for initialization, entrypoint will handle user switching
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
